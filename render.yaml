@@ -3,9 +3,14 @@ services:
     name: plush-nft-bot
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: gunicorn app:app
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_ID
         sync: false
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          name: plush-nft-bot
+          type: web
+          property: url
