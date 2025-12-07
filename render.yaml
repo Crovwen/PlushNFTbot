@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: plush-nft-bot
+    name: plushnft-bot
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
@@ -11,6 +11,6 @@ services:
         sync: false
       - key: RENDER_EXTERNAL_URL
         fromService:
-          name: plush-nft-bot
+          name: plushnft-bot
           type: web
           property: url
