@@ -441,7 +441,7 @@ https://t.me/PlushNFTbot?start={user['referral_code']}
 4. Delivery within 48 hours
 
 *Need help?*
-Contact: @YourSupportChannel
+Contact: @PllushNFt
                 """
                 
                 bot.edit_message_text(
