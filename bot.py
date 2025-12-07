@@ -97,7 +97,9 @@ def check_channel_membership(user_id):
     try:
         chat_member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return chat_member.status in ['member', 'administrator', 'creator']
-    except:
+    except Exception as e:
+        print(f"Error checking channel membership: {e}")
+        # اگر ارور داد، فرض می‌کنیم کاربر عضو نیست
         return False
 
 def create_user(user_id, username, first_name, referral_code=None):
@@ -137,13 +139,16 @@ def create_user(user_id, username, first_name, referral_code=None):
                 pass
     
     db_connection.commit()
+    return has_joined
 
 # Keyboard templates
 def join_channel_keyboard():
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
-        InlineKeyboardButton("✅ Join Channel", url=CHANNEL_URL),
-        InlineKeyboardButton("🔍 Check Membership", callback_data="check_membership")
+        InlineKeyboardButton("✅ Join Channel", url=CHANNEL_URL)
+    )
+    keyboard.add(
+        InlineKeyboardButton("🔍 I've Joined", callback_data="check_membership")
     )
     return keyboard
 
@@ -172,7 +177,7 @@ WITHDRAWAL_ITEMS = [
     {"name": "👁️ Evil Eye", "price": 5, "order_code": "order_2351"},
     {"name": "📓 Star Notepad", "price": 2.5, "order_code": "order_2352"},
     {"name": "🎭 Jester Hat", "price": 2, "order_code": "order_2353"},
-    {"name": "🐍 Pet Snake", "price": 2, "order_code": "order_2344"},
+    {"name": "🐍 Pet Snake", "price": 2, "order_code": "order_2354"},
     {"name": "🌙 Lunar Snake", "price": 1.5, "order_code": "order_2355"}
 ]
 
@@ -211,29 +216,33 @@ def start_command(message):
     if len(message.text.split()) > 1:
         referral_code = message.text.split()[1]
     
-    create_user(user_id, username, first_name, referral_code)
+    # Create user and check channel membership
+    has_joined = create_user(user_id, username, first_name, referral_code)
     
-    # بررسی عضویت در کانال
-    if check_channel_membership(user_id):
-        update_user_channel_status(user_id, 1)
+    if has_joined:
         show_main_menu(user_id, first_name)
     else:
-        show_join_channel_message(user_id)
+        show_join_channel_message(user_id, first_name)
 
-def show_join_channel_message(user_id):
+def show_join_channel_message(user_id, first_name):
     join_text = f"""
-🚫 *Access Restricted*
+👋 *Welcome {first_name}!*
 
-To use *Plush NFT Bot*, you must join our official channel first!
+📢 *Join Requirement*
 
-📢 *Channel:* {CHANNEL_USERNAME}
+To access *Plush NFT Bot* features, you must join our official channel:
 
-*Steps:*
+{CHANNEL_USERNAME}
+
+*How to proceed:*
 1. Click *'Join Channel'* button below
-2. Join the channel
-3. Click *'Check Membership'* button
+2. Join our channel
+3. Click *'I've Joined'* button
 
-After joining, you'll get access to all bot features!
+Once verified, you'll get access to:
+🎁 Daily Bonus (0.3 TON every 24h)
+👥 Referral Program (0.3 TON per referral)
+💰 Withdraw exclusive items
     """
     
     bot.send_message(
@@ -246,6 +255,10 @@ After joining, you'll get access to all bot features!
 def show_main_menu(user_id, first_name):
     welcome_text = f"""
 ✨ *Welcome to Plush NFT Bot, {first_name}!* ✨
+
+✅ *Channel verification successful!*
+
+Now you can access all features:
 
 🎁 *Daily Bonus* - Claim 0.3 TON every 24h
 👥 *Referral Program* - Earn 0.3 TON per referral
@@ -264,15 +277,12 @@ def show_main_menu(user_id, first_name):
 @bot.callback_query_handler(func=lambda call: call.data == "check_membership")
 def check_membership_handler(call):
     user_id = call.from_user.id
+    user = get_user(user_id)
+    first_name = user['first_name'] if user else "User"
     
     if check_channel_membership(user_id):
         update_user_channel_status(user_id, 1)
         
-        # Get user info for welcome message
-        user = get_user(user_id)
-        first_name = user['first_name'] if user else "User"
-        
-        # Edit message to show main menu
         welcome_text = f"""
 ✅ *Channel Verified!*
 
@@ -296,11 +306,11 @@ Now you can access all features:
     else:
         bot.answer_callback_query(
             call.id,
-            "❌ You haven't joined the channel yet! Please join first.",
+            "❌ You haven't joined the channel yet! Please join first and then click 'I've Joined'.",
             show_alert=True
         )
 
-# در ابتدای تابع menu_handler این بررسی را اضافه می‌کنیم
+# Main menu handlers
 @bot.callback_query_handler(func=lambda call: call.data.startswith('menu_'))
 def menu_handler(call):
     user_id = call.from_user.id
@@ -314,16 +324,19 @@ def menu_handler(call):
     if not check_channel_membership(user_id):
         bot.answer_callback_query(
             call.id,
-            "❌ Please join the channel first!",
+            "❌ Please join the channel first! Click 'I've Joined' after joining.",
             show_alert=True
         )
-        show_join_channel_message(user_id)
+        
+        # Get user info for personalized message
+        user = get_user(user_id)
+        first_name = user['first_name'] if user else "User"
+        show_join_channel_message(user_id, first_name)
         return
     
     # به روزرسانی وضعیت عضویت
     update_user_channel_status(user_id, 1)
     
-    # بقیه کد بدون تغییر...
     if call.data == "menu_profile":
         # Count referrals
         cursor = db_connection.cursor()
@@ -338,6 +351,7 @@ def menu_handler(call):
 📅 *Join Date:* {user['join_date']}
 👥 *Referrals:* {referral_count} users
 🔗 *Your Referral Code:* `{user['referral_code']}`
+💰 *Balance:* {user['balance']:.2f} TON
         """
         
         bot.edit_message_text(
@@ -354,8 +368,12 @@ def menu_handler(call):
 
 *Current Balance:* `{user['balance']:.2f} TON`
 
-💡 *Increase your balance by inviting friends!*
-Each referral earns you *0.3 TON*
+💡 *Increase your balance by:*
+1. Claiming daily bonus (0.3 TON every 24h)
+2. Referring friends (0.3 TON per referral)
+
+🔗 *Your referral link:*
+`https://t.me/PlushNFTbot?start={user['referral_code']}`
         """
         
         bot.edit_message_text(
@@ -406,12 +424,16 @@ Come back later to claim your 0.3 TON!
         ''', (now.strftime("%Y-%m-%d %H:%M:%S"), user['user_id']))
         db_connection.commit()
         
-        bonus_text = """
+        # Get updated balance
+        user = get_user(user_id)
+        
+        bonus_text = f"""
 🎉 *Daily Bonus Claimed!*
 
-+0.3 TON added to your balance!
+✅ +0.3 TON added to your balance!
+💰 *New Balance:* {user['balance']:.2f} TON
 
-Come back in 24 hours for your next bonus.
+⏰ Come back in 24 hours for your next bonus.
         """
         
         bot.edit_message_text(
@@ -423,8 +445,17 @@ Come back in 24 hours for your next bonus.
         )
         
     elif call.data == "menu_referral":
+        # Count referrals for this user
+        cursor = db_connection.cursor()
+        cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user['user_id'],))
+        referral_count = cursor.fetchone()[0]
+        
         referral_text = f"""
 📤 *Referral Program*
+
+*Your Stats:*
+👥 Referrals: {referral_count} users
+💰 Earned: {referral_count * 0.3:.2f} TON
 
 Earn *0.3 TON* for each friend who joins using your link!
 
@@ -438,6 +469,7 @@ https://t.me/PlushNFTbot?start={user['referral_code']}
 1. Share your link with friends
 2. They join the bot using your link
 3. You receive 0.3 TON automatically
+4. They also get to join and earn!
         """
         
         bot.edit_message_text(
@@ -468,18 +500,23 @@ https://t.me/PlushNFTbot?start={user['referral_code']}
 🆘 *Help Center*
 
 *How to earn TON:*
-1. Claim daily bonus every 24h
-2. Invite friends using your referral link
-3. Each referral earns you 0.3 TON
+1. Claim daily bonus every 24h (0.3 TON)
+2. Invite friends using your referral link (0.3 TON each)
+3. Join our channel for updates
 
-*Withdrawal:*
+*Withdrawal Process:*
 1. Go to Withdraw section
-2. Select an item
+2. Select an item you want
 3. If you have enough balance, it will be processed
 4. Delivery within 48 hours
 
+*Important Notes:*
+• Minimum balance required for withdrawal varies per item
+• Referral bonus is credited instantly
+• Daily bonus resets every 24 hours
+
 *Need more help?*
-Contact support: @YourSupportChannel
+Contact: @YourSupportChannel
         """
         
         bot.edit_message_text(
@@ -490,7 +527,6 @@ Contact support: @YourSupportChannel
             reply_markup=back_to_main_keyboard()
         )
 
-# همچنین در تابع process_withdrawal هم این بررسی را اضافه می‌کنیم
 @bot.callback_query_handler(func=lambda call: call.data.startswith('withdraw_'))
 def process_withdrawal(call):
     user_id = call.from_user.id
@@ -502,7 +538,9 @@ def process_withdrawal(call):
             "❌ Please join the channel first!",
             show_alert=True
         )
-        show_join_channel_message(user_id)
+        user = get_user(user_id)
+        first_name = user['first_name'] if user else "User"
+        show_join_channel_message(user_id, first_name)
         return
     
     user = get_user(user_id)
@@ -528,7 +566,9 @@ def process_withdrawal(call):
 *Your Balance:* {user['balance']:.2f} TON
 *Required:* {selected_item['price'] - user['balance']:.2f} TON more
 
-Earn more TON by inviting friends!
+💡 *Earn more TON by:*
+1. Claiming daily bonus
+2. Inviting friends (0.3 TON each)
         """
         
         bot.edit_message_text(
@@ -554,18 +594,24 @@ Earn more TON by inviting friends!
     
     db_connection.commit()
     
+    # Get updated balance
+    user = get_user(user_id)
+    
     # Send confirmation
     confirmation_text = f"""
 ✅ *Withdrawal Successful!*
 
-*Item:* {selected_item['name']}
-*Amount:* {selected_item['price']} TON
-*Order Code:* /{order_code}
-*Status:* Processing
-*Estimated Time:* Up to 48 hours
+📦 *Item:* {selected_item['name']}
+💰 *Amount:* {selected_item['price']} TON
+📋 *Order Code:* `{order_code}`
+📊 *Remaining Balance:* {user['balance']:.2f} TON
+🔄 *Status:* Processing
+⏰ *Estimated Time:* Up to 48 hours
 
 Your withdrawal has been registered and will be processed within 48 hours.
 You will be notified when it's shipped.
+
+Thank you for using Plush NFT Bot! 🎉
     """
     
     bot.edit_message_text(
@@ -576,7 +622,6 @@ You will be notified when it's shipped.
         reply_markup=back_to_main_keyboard()
     )
 
-# در تابع back_to_main_callback هم بررسی می‌کنیم
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def back_to_main_callback(call):
     user_id = call.from_user.id
@@ -588,7 +633,9 @@ def back_to_main_callback(call):
             "❌ Please join the channel first!",
             show_alert=True
         )
-        show_join_channel_message(user_id)
+        user = get_user(user_id)
+        first_name = user['first_name'] if user else "User"
+        show_join_channel_message(user_id, first_name)
         return
     
     update_user_channel_status(user_id, 1)
@@ -611,10 +658,7 @@ def back_to_main_callback(call):
         reply_markup=main_menu_keyboard()
     )
 
-# بقیه کدها بدون تغییر باقی می‌مانند (همان کدهای ادمین و...) 
-# فقط اطمینان حاصل کنید که تابع check_channel_membership در دسترس است
-
-# Admin commands - بدون تغییر
+# Admin commands - بدون تغییر باقی می‌مانند
 @bot.message_handler(commands=['padmin'])
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
@@ -642,10 +686,357 @@ def admin_panel(message):
         reply_markup=admin_keyboard()
     )
 
-# بقیه کدهای ادمین بدون تغییر...
-# [کدهای ادمین از خط 314 به بعد بدون تغییر می‌مانند]
+# بقیه کدهای ادمین بدون تغییر از اینجا به بعد...
+# فقط مطمئن شوید که import خطا نمی‌دهد
+
+@bot.message_handler(commands=['stats'])
+def stats_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    cursor = db_connection.cursor()
+    
+    # Total users
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    # Total balance
+    cursor.execute('SELECT SUM(balance) FROM users')
+    total_balance = cursor.fetchone()[0] or 0
+    
+    # Pending withdrawals
+    cursor.execute('SELECT COUNT(*) FROM withdrawals WHERE status = "pending"')
+    pending_withdrawals = cursor.fetchone()[0]
+    
+    # Today's users
+    today = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute('SELECT COUNT(*) FROM users WHERE join_date LIKE ?', (f"{today}%",))
+    today_users = cursor.fetchone()[0]
+    
+    # Total referrals
+    cursor.execute('SELECT COUNT(*) FROM referrals')
+    total_referrals = cursor.fetchone()[0]
+    
+    # Users in channel
+    cursor.execute('SELECT COUNT(*) FROM users WHERE has_joined_channel = 1')
+    channel_users = cursor.fetchone()[0]
+    
+    stats_text = f"""
+📊 *Bot Statistics*
+
+👥 *Total Users:* {total_users}
+✅ *In Channel:* {channel_users}
+💰 *Total Balance:* {total_balance:.2f} TON
+📤 *Pending Withdrawals:* {pending_withdrawals}
+📈 *Today's New Users:* {today_users}
+🔗 *Total Referrals:* {total_referrals}
+    """
+    
+    bot.send_message(
+        message.chat.id,
+        stats_text,
+        parse_mode='Markdown',
+        reply_markup=admin_keyboard()
+    )
+
+@bot.message_handler(commands=['addbalance'])
+def add_balance_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        _, user_id, amount = message.text.split()
+        user_id = int(user_id)
+        amount = float(amount)
+        
+        cursor = db_connection.cursor()
+        cursor.execute('SELECT first_name FROM users WHERE user_id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            bot.send_message(message.chat.id, "❌ User not found!")
+            return
+        
+        cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
+        db_connection.commit()
+        
+        # Notify user
+        try:
+            bot.send_message(user_id, f"🎉 *Admin Bonus!*\n\n+{amount} TON added to your balance by admin!\nNew balance available for withdrawal.",
+                           parse_mode='Markdown')
+        except:
+            pass
+        
+        bot.send_message(
+            message.chat.id,
+            f"✅ Added {amount} TON to user {user_id} ({user[0]})",
+            reply_markup=admin_keyboard()
+        )
+        
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Usage: /addbalance [user_id] [amount]\nExample: /addbalance 123456789 10.5")
+
+@bot.message_handler(commands=['addall'])
+def add_all_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        _, amount = message.text.split()
+        amount = float(amount)
+        
+        cursor = db_connection.cursor()
+        cursor.execute('UPDATE users SET balance = balance + ?', (amount,))
+        db_connection.commit()
+        
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        bot.send_message(
+            message.chat.id,
+            f"✅ Added {amount} TON to all {total_users} users!",
+            reply_markup=admin_keyboard()
+        )
+        
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Usage: /addall [amount]\nExample: /addall 5")
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    msg = bot.send_message(message.chat.id, "📢 *Send the broadcast message:*\n\n(Text, photo, or document)",
+                          parse_mode='Markdown')
+    bot.register_next_step_handler(msg, process_broadcast)
+
+def process_broadcast(message):
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT user_id FROM users')
+    users = cursor.fetchall()
+    
+    sent = 0
+    failed = 0
+    
+    progress_msg = bot.send_message(message.chat.id, f"📤 Broadcasting to {len(users)} users...\nSent: 0 | Failed: 0")
+    
+    for user_row in users:
+        user_id = user_row[0]
+        try:
+            # Forward the message
+            if message.content_type == 'text':
+                bot.send_message(user_id, message.text, parse_mode='Markdown')
+            elif message.content_type == 'photo':
+                bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption)
+            elif message.content_type == 'document':
+                bot.send_document(user_id, message.document.file_id, caption=message.caption)
+            
+            sent += 1
+        except Exception as e:
+            failed += 1
+        
+        # Update progress every 10 users
+        if (sent + failed) % 10 == 0:
+            bot.edit_message_text(
+                f"📤 Broadcasting to {len(users)} users...\nSent: {sent} | Failed: {failed}",
+                message.chat.id,
+                progress_msg.message_id
+            )
+    
+    bot.edit_message_text(
+        f"✅ *Broadcast Complete!*\n\nTotal: {len(users)} users\n✅ Sent: {sent}\n❌ Failed: {failed}",
+        message.chat.id,
+        progress_msg.message_id,
+        parse_mode='Markdown'
+    )
+    bot.send_message(message.chat.id, "👑 *Admin Panel*", parse_mode='Markdown', reply_markup=admin_keyboard())
+
+@bot.message_handler(commands=['users'])
+def users_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT user_id, first_name, balance FROM users ORDER BY user_id DESC LIMIT 50')
+    users = cursor.fetchall()
+    
+    if not users:
+        bot.send_message(message.chat.id, "📭 No users found!")
+        return
+    
+    users_text = "👥 *Latest 50 Users*\n\n"
+    for user in users:
+        users_text += f"🆔 `{user[0]}` - {user[1]} - {user[2]:.2f} TON\n"
+    
+    users_text += f"\n*Total users:* {len(users)}"
+    
+    bot.send_message(
+        message.chat.id,
+        users_text,
+        parse_mode='Markdown',
+        reply_markup=admin_keyboard()
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def admin_callback_handler(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Access denied!")
+        return
+    
+    if call.data == "admin_stats":
+        cursor = db_connection.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT SUM(balance) FROM users')
+        total_balance = cursor.fetchone()[0] or 0
+        
+        stats_text = f"""
+📊 *Bot Statistics*
+
+👥 Total Users: {total_users}
+💰 Total Balance: {total_balance:.2f} TON
+        """
+        
+        bot.edit_message_text(
+            stats_text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=admin_keyboard()
+        )
+    
+    elif call.data == "admin_add_all":
+        msg = bot.send_message(call.message.chat.id, "💰 *Enter amount to add to ALL users:*\n\nExample: 10.5",
+                              parse_mode='Markdown')
+        bot.register_next_step_handler(msg, admin_add_all_step)
+
+def admin_add_all_step(message):
+    try:
+        amount = float(message.text)
+        
+        cursor = db_connection.cursor()
+        cursor.execute('UPDATE users SET balance = balance + ?', (amount,))
+        db_connection.commit()
+        
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        bot.send_message(
+            message.chat.id,
+            f"✅ Added {amount} TON to all {total_users} users!",
+            reply_markup=admin_keyboard()
+        )
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Invalid amount! Please enter a number.")
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_add_user")
+def admin_add_user_callback(call):
+    msg = bot.send_message(call.message.chat.id, "👤 *Enter user ID and amount:*\n\nExample: 123456789 10.5",
+                          parse_mode='Markdown')
+    bot.register_next_step_handler(msg, admin_add_user_step)
+
+def admin_add_user_step(message):
+    try:
+        parts = message.text.split()
+        if len(parts) != 2:
+            raise ValueError
+        
+        user_id = int(parts[0])
+        amount = float(parts[1])
+        
+        cursor = db_connection.cursor()
+        cursor.execute('SELECT first_name FROM users WHERE user_id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            bot.send_message(message.chat.id, "❌ User not found!")
+            return
+        
+        cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
+        db_connection.commit()
+        
+        # Notify user
+        try:
+            bot.send_message(user_id, f"🎉 *Admin Bonus!*\n\n+{amount} TON added to your balance!\nNew balance available for withdrawal.",
+                           parse_mode='Markdown')
+        except:
+            pass
+        
+        bot.send_message(
+            message.chat.id,
+            f"✅ Added {amount} TON to user {user_id} ({user[0]})",
+            reply_markup=admin_keyboard()
+        )
+        
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Invalid format! Use: [user_id] [amount]\nExample: 123456789 10.5")
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_broadcast")
+def admin_broadcast_callback(call):
+    msg = bot.send_message(call.message.chat.id, "📢 *Send your broadcast message:*\n\n(Text, photo, or document)",
+                          parse_mode='Markdown')
+    bot.register_next_step_handler(msg, process_broadcast_callback)
+
+def process_broadcast_callback(message):
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT user_id FROM users')
+    users = cursor.fetchall()
+    
+    sent = 0
+    failed = 0
+    
+    progress_msg = bot.send_message(message.chat.id, f"📤 Broadcasting to {len(users)} users...")
+    
+    for user_row in users:
+        user_id = user_row[0]
+        try:
+            # Forward the message
+            if message.content_type == 'text':
+                bot.send_message(user_id, message.text, parse_mode='Markdown')
+            elif message.content_type == 'photo':
+                bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption, parse_mode='Markdown')
+            elif message.content_type == 'document':
+                bot.send_document(user_id, message.document.file_id, caption=message.caption, parse_mode='Markdown')
+            
+            sent += 1
+        except:
+            failed += 1
+    
+    bot.send_message(
+        message.chat.id,
+        f"✅ *Broadcast Complete!*\n\nTotal: {len(users)} users\n✅ Sent: {sent}\n❌ Failed: {failed}",
+        parse_mode='Markdown',
+        reply_markup=admin_keyboard()
+    )
+    bot.delete_message(message.chat.id, progress_msg.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_user_list")
+def admin_user_list_callback(call):
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT user_id, first_name, balance FROM users ORDER BY balance DESC LIMIT 20')
+    top_users = cursor.fetchall()
+    
+    users_text = f"👥 *Top 20 Users by Balance*\n\n*Total Users:* {total_users}\n\n"
+    
+    for i, user in enumerate(top_users, 1):
+        users_text += f"{i}. `{user[0]}` - {user[1]} - *{user[2]:.2f} TON*\n"
+    
+    bot.edit_message_text(
+        users_text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown',
+        reply_markup=admin_keyboard()
+    )
 
 # Keep the bot running
 if __name__ == "__main__":
     print("🤖 Plush NFT Bot is starting...")
-    bot.infinity_polling(timeout=30, long_polling_timeout=5)
+    print(f"📢 Channel: {CHANNEL_USERNAME}")
+    print(f"👑 Admin ID: {ADMIN_ID}")
+    bot.infinity_polling(timeout=30, long_polling_timeout=5) 
