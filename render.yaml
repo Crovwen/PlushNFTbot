@@ -6,9 +6,9 @@ services:
     startCommand: gunicorn app:app
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        value: "7593433447:AAF1XGZI3budBP3LN3NtY1ThVnIkssHbV9I"
       - key: ADMIN_ID
-        sync: false
+        value: "5095867558"
       - key: RENDER_EXTERNAL_URL
         fromService:
           name: plushnft-bot
