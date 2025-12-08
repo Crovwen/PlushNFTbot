@@ -8,9 +8,9 @@ import threading
 import time
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "7593433447:AAF1XGZI3budBP3LN3NtY1ThVnIkssHbV9I" # توکن بات را اینجا قرار دهید
-ADMIN_ID = 5095867558 # آیدی عددی ادمین را اینجا قرار دهید
-CHANNEL_USERNAME = "@PllushNFt"  # آیدی کانال
+BOT_TOKEN = "7593433447:AAF1XGZI3budBP3LN3NtY1ThVnIkssHbV9I"
+ADMIN_ID = 5095867558
+CHANNEL_USERNAME = "@PllushNFt"
 CHANNEL_URL = "https://t.me/PllushNFt"
 
 # ==================== INITIALIZE ====================
@@ -55,7 +55,7 @@ def init_db():
             referrer_id INTEGER,
             referred_id INTEGER,
             date TEXT,
-            UNIQUE(referred_id),  # هر کاربر فقط یک بار می‌تواند معرفی شود
+            UNIQUE(referred_id),
             FOREIGN KEY (referrer_id) REFERENCES users (user_id),
             FOREIGN KEY (referred_id) REFERENCES users (user_id)
         )
@@ -86,7 +86,6 @@ def get_user(user_id):
     return None
 
 def check_channel_membership(user_id):
-    """بررسی عضویت کاربر در کانال"""
     try:
         chat_member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return chat_member.status in ['member', 'administrator', 'creator']
@@ -100,7 +99,6 @@ def update_channel_status(user_id, status):
     db.commit()
 
 def check_previous_referral(user_id):
-    """بررسی می‌کند آیا کاربر قبلاً توسط کسی معرفی شده یا نه"""
     cursor = db.cursor()
     cursor.execute('SELECT COUNT(*) FROM referrals WHERE referred_id = ?', (user_id,))
     count = cursor.fetchone()[0]
@@ -111,34 +109,28 @@ def create_user(user_id, username, first_name, referral_code=None):
     join_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     user_referral_code = f"REF{user_id}"
     
-    # چک کردن عضویت در کانال
     channel_member = check_channel_membership(user_id)
     
-    # ابتدا چک می‌کنیم آیا کاربر از قبل وجود دارد
     cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
     existing_user = cursor.fetchone()
     
     if existing_user:
-        # اگر کاربر از قبل وجود دارد
         cursor.execute('''
             UPDATE users 
             SET username = ?, first_name = ?, channel_joined = ?
             WHERE user_id = ?
         ''', (username, first_name, 1 if channel_member else 0, user_id))
         
-        # بررسی می‌کنیم آیا کاربر قبلاً رفرال داشته
-        if existing_user[7] != 0:  # invited_by column
+        if existing_user[7] != 0:
             print(f"⚠️ User {user_id} already has a referrer: {existing_user[7]}")
             db.commit()
             return channel_member
         
-        # اگر رفرال کد دارد و قبلاً رفرال نداشته
         if referral_code and not check_previous_referral(user_id):
             cursor.execute('SELECT user_id FROM users WHERE referral_code = ?', (referral_code,))
             referrer = cursor.fetchone()
             
             if referrer and referrer[0] != user_id:
-                # ثبت رفرال
                 cursor.execute('UPDATE users SET invited_by = ? WHERE user_id = ?', (referrer[0], user_id))
                 cursor.execute('UPDATE users SET balance = balance + 0.3 WHERE user_id = ?', (referrer[0],))
                 
@@ -156,20 +148,17 @@ def create_user(user_id, username, first_name, referral_code=None):
                 except Exception as e:
                     print(f"❌ Error inserting referral: {e}")
     else:
-        # کاربر جدید
         cursor.execute('''
             INSERT INTO users 
             (user_id, username, first_name, join_date, referral_code, channel_joined) 
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (user_id, username, first_name, join_date, user_referral_code, 1 if channel_member else 0))
         
-        # اگر رفرال کد دارد
         if referral_code and not check_previous_referral(user_id):
             cursor.execute('SELECT user_id FROM users WHERE referral_code = ?', (referral_code,))
             referrer = cursor.fetchone()
             
             if referrer and referrer[0] != user_id:
-                # ثبت رفرال
                 cursor.execute('UPDATE users SET invited_by = ? WHERE user_id = ?', (referrer[0], user_id))
                 cursor.execute('UPDATE users SET balance = balance + 0.3 WHERE user_id = ?', (referrer[0],))
                 
@@ -257,18 +246,15 @@ def handle_start(message):
         
         print(f"🚀 User {user_id} ({first_name}) started the bot")
         
-        # بررسی کد معرف
         referral_code = None
         if len(message.text.split()) > 1:
             referral_code = message.text.split()[1]
             print(f"📝 Referral code: {referral_code}")
             
-            # چک می‌کنیم آیا کاربر قبلاً رفرال داشته یا نه
             if check_previous_referral(user_id):
                 print(f"⚠️ User {user_id} already has a referral, ignoring new referral code")
                 referral_code = None
         
-        # ایجاد کاربر
         is_member = create_user(user_id, username, first_name, referral_code)
         
         if is_member:
@@ -422,7 +408,6 @@ def menu_handler(call):
             cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user['user_id'],))
             referral_count = cursor.fetchone()[0]
             
-            # گرفتن اطلاعات رفرر
             referrer_id = user['invited_by']
             referrer_name = "No one"
             if referrer_id:
@@ -536,7 +521,6 @@ Come back later to claim your 0.3 TON!
             cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user['user_id'],))
             referral_count = cursor.fetchone()[0]
             
-            # بررسی آیا کاربر خودش توسط کسی معرفی شده
             was_referred = user['invited_by'] != 0
             
             referral_text = f"""
@@ -600,7 +584,7 @@ https://t.me/PlushNFTbot?start={user['referral_code']}
 • Minimum withdrawal varies per item
 
 *Need help?*
-Contact: @PllushNFt
+Contact: @PlushNFTbot
             """
             
             bot.edit_message_text(
@@ -1157,4 +1141,4 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 5000))
     print(f"🌐 Flask server starting on port {port}")
-    app.run(host='0.0.0.0', port=port) 
+    app.run(host='0.0.0.0', port=port)
